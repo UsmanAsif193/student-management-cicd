@@ -22,9 +22,7 @@ pipeline {
 
   stages {
 
-    // ==========================================
-    // STAGE 1: CODE FETCH (6 Marks)
-    // ==========================================
+    // STAGE 1: CODE FETCH 
     stage('Code Fetch from GitHub') {
       steps {
         echo '📥 Stage 1: Fetching code from GitHub...'
@@ -39,9 +37,7 @@ pipeline {
       }
     }
 
-    // ==========================================
-    // STAGE 2: DOCKER IMAGE CREATION (10 Marks)
-    // ==========================================
+    // STAGE 2: DOCKER IMAGE CREATION
     stage('Build Docker Image') {
       steps {
         echo "🔨 Stage 2: Building Docker image: ${FULL_IMAGE_NAME}"
@@ -76,9 +72,7 @@ pipeline {
       }
     }
 
-    // ==========================================
-    // STAGE 3: KUBERNETES DEPLOYMENT (17 Marks)
-    // ==========================================
+    // STAGE 3: KUBERNETES DEPLOYMENT
     stage('Deploy to Kubernetes') {
       steps {
         echo "🚀 Stage 3: Deploying to Kubernetes using image: ${LATEST_IMAGE_NAME}"
@@ -140,9 +134,7 @@ pipeline {
       }
     }
 
-    // ==========================================
-    // STAGE 4: PROMETHEUS / GRAFANA (17 Marks)
-    // ==========================================
+    // STAGE 4: PROMETHEUS / GRAFANA
     stage('Monitoring (Prometheus + Grafana)') {
       steps {
         echo "📊 Stage 4: Ensuring Prometheus + Grafana are installed (idempotent)..."
