@@ -1,3 +1,4 @@
+# Store non-sensitive Postgres settings and credentials
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,6 +7,7 @@ data:
   POSTGRES_DB: studentdb
   POSTGRES_USER: postgres
 ---
+# Store sensitive Postgres password separately from the ConfigMap
 apiVersion: v1
 kind: Secret
 metadata:

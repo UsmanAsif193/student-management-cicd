@@ -1,3 +1,4 @@
+# Deploy PostgreSQL instance with persistent storage and health checks
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,6 +22,7 @@ spec:
         - containerPort: 5432
           name: postgres
         env:
+        # Database name/user come from ConfigMap; password from Secret
         - name: POSTGRES_DB
           valueFrom:
             configMapKeyRef:
@@ -46,6 +48,7 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        # Use built-in pg_isready checks to restart or stop routing to bad pods
         livenessProbe:
           exec:
             command:
@@ -63,10 +66,12 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
       volumes:
+      # PVC keeps database data across pod restarts
       - name: postgres-storage
         persistentVolumeClaim:
           claimName: postgres-pvc
 ---
+# ClusterIP service to expose Postgres inside the cluster
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,3 +1,4 @@
+# Deploy the Student Management application pods and keep them running
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,6 +6,7 @@ metadata:
   labels:
     app: student-app
 spec:
+  # Run two replicas to handle traffic and provide simple HA
   replicas: 2
   selector:
     matchLabels:
@@ -22,8 +24,10 @@ spec:
         - containerPort: 3000
           name: http
         env:
+        # Application port configuration
         - name: PORT
           value: "3000"
+        # Database connection details pulled from Postgres resources
         - name: DB_HOST
           value: "postgres-service"
         - name: DB_PORT
@@ -50,6 +54,7 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
+        # Basic health checks to restart or stop routing to unhealthy pods
         livenessProbe:
           httpGet:
             path: /health
