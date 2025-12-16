@@ -1,0 +1,307 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Docker Configuration
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
+        DOCKERHUB_USERNAME = 'usmanasif193'
+        IMAGE_NAME = 'student-management-system'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        FULL_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
+        LATEST_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
+        
+        // Kubernetes Configuration
+        KUBECONFIG = credentials('kubeconfig-credentials')
+    }
+    
+    stages {
+        // ==========================================
+        // STAGE 1: CODE FETCH (6 Marks)
+        // ==========================================
+        stage('Code Fetch from GitHub') {
+            steps {
+                script {
+                    echo '📥 Stage 1: Fetching code from GitHub...'
+                    echo '================================================'
+                    echo "Repository: ${env.GIT_URL}"
+                    echo "Branch: ${env.GIT_BRANCH}"
+                    echo "Commit: ${env.GIT_COMMIT}"
+                    echo '================================================'
+                }
+                
+                // Code is already checked out by Jenkins Git plugin
+                // This happens automatically when pipeline is triggered
+                
+                sh '''
+                    echo "✅ Code fetched successfully"
+                    echo "Current directory: $(pwd)"
+                    echo "Files in workspace:"
+                    ls -la
+                '''
+            }
+        }
+        
+        // ==========================================
+        // STAGE 2: DOCKER IMAGE CREATION (10 Marks)
+        // ==========================================
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    echo '🔨 Stage 2: Building Docker Image...'
+                    echo '================================================'
+                    echo "Image Name: ${FULL_IMAGE_NAME}"
+                    echo "Build Number: ${BUILD_NUMBER}"
+                    echo '================================================'
+                }
+                
+                dir('app') {
+                    sh """
+                        echo '📦 Building Docker image...'
+                        docker build -t ${FULL_IMAGE_NAME} -f ../docker/Dockerfile .
+                        docker tag ${FULL_IMAGE_NAME} ${LATEST_IMAGE_NAME}
+                        echo '✅ Docker image built successfully'
+                    """
+                }
+            }
+        }
+        
+        stage('Push to DockerHub') {
+            steps {
+                script {
+                    echo '📤 Stage 2: Pushing Docker Image to DockerHub...'
+                    echo '================================================'
+                }
+                
+                sh """
+                    echo '🔐 Logging in to DockerHub...'
+                    echo \$DOCKERHUB_CREDENTIALS_PSW | docker login -u \$DOCKERHUB_CREDENTIALS_USR --password-stdin
+                    
+                    echo '📤 Pushing image with build number tag...'
+                    docker push ${FULL_IMAGE_NAME}
+                    
+                    echo '📤 Pushing latest tag...'
+                    docker push ${LATEST_IMAGE_NAME}
+                    
+                    echo '✅ Images pushed successfully to DockerHub'
+                    echo 'Available at: https://hub.docker.com/r/${DOCKERHUB_USERNAME}/${IMAGE_NAME}'
+                """
+            }
+        }
+        
+        stage('Docker Cleanup') {
+            steps {
+                script {
+                    echo '🧹 Cleaning up local Docker images...'
+                }
+                
+                sh """
+                    docker rmi ${FULL_IMAGE_NAME} || true
+                    docker rmi ${LATEST_IMAGE_NAME} || true
+                    docker logout
+                """
+            }
+        }
+        
+        // ==========================================
+        // STAGE 3: KUBERNETES DEPLOYMENT (17 Marks)
+        // ==========================================
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    echo '🚀 Stage 3: Deploying to Kubernetes...'
+                    echo '================================================'
+                    echo "Image: ${LATEST_IMAGE_NAME}"
+                    echo '================================================'
+                }
+                
+                // Update image in deployment file
+                sh """
+                    echo '📝 Updating deployment with new image...'
+                    sed -i 's|image: .*student-management-system.*|image: ${LATEST_IMAGE_NAME}|g' kubernetes/app-deployment.yaml
+                    
+                    echo '📄 Deployment file updated:'
+                    grep 'image:' kubernetes/app-deployment.yaml
+                """
+                
+                // Apply Kubernetes manifests
+                sh """
+                    echo '🔧 Applying Kubernetes configurations...'
+                    
+                    # Apply ConfigMap and Secret
+                    kubectl apply -f kubernetes/postgres-config.yaml
+                    
+                    # Apply PersistentVolumeClaim
+                    kubectl apply -f kubernetes/postgres-pvc.yaml
+                    
+                    # Deploy PostgreSQL
+                    kubectl apply -f kubernetes/postgres-deployment.yaml
+                    
+                    # Wait for PostgreSQL to be ready
+                    echo '⏳ Waiting for PostgreSQL to be ready...'
+                    kubectl wait --for=condition=ready pod -l app=postgres --timeout=120s || true
+                    
+                    # Deploy Application
+                    kubectl apply -f kubernetes/app-deployment.yaml
+                    
+                    # Apply Service
+                    kubectl apply -f kubernetes/app-service.yaml
+                    
+                    # Wait for application pods to be ready
+                    echo '⏳ Waiting for application to be ready...'
+                    kubectl wait --for=condition=ready pod -l app=student-app --timeout=120s || true
+                    
+                    echo '✅ Kubernetes deployment completed'
+                """
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    echo '✅ Stage 3: Verifying Kubernetes Deployment...'
+                    echo '================================================'
+                }
+                
+                sh """
+                    echo '📊 Deployment Status:'
+                    kubectl get deployments
+                    
+                    echo ''
+                    echo '📦 Pods:'
+                    kubectl get pods -o wide
+                    
+                    echo ''
+                    echo '🔌 Services:'
+                    kubectl get services
+                    
+                    echo ''
+                    echo '💾 PersistentVolumeClaims:'
+                    kubectl get pvc
+                    
+                    echo ''
+                    echo '✅ Deployment verification completed'
+                """
+            }
+        }
+        
+        // ==========================================
+        // STAGE 4: MONITORING SETUP (17 Marks)
+        // ==========================================
+        stage('Install Prometheus') {
+            steps {
+                script {
+                    echo '📊 Stage 4: Installing Prometheus using Helm...'
+                    echo '================================================'
+                }
+                
+                sh """
+                    # Add Prometheus Helm repository
+                    echo '📦 Adding Prometheus Helm repo...'
+                    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                    helm repo update
+                    
+                    # Install or upgrade Prometheus
+                    echo '🔧 Installing Prometheus...'
+                    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \\
+                        --namespace monitoring \\
+                        --create-namespace \\
+                        --set prometheus.service.type=NodePort \\
+                        --set prometheus.service.nodePort=30090 \\
+                        --wait --timeout=10m
+                    
+                    echo '✅ Prometheus installed successfully'
+                    
+                    # Get Prometheus service details
+                    kubectl get svc -n monitoring | grep prometheus
+                """
+            }
+        }
+        
+        stage('Install Grafana') {
+            steps {
+                script {
+                    echo '📊 Stage 4: Installing Grafana using Helm...'
+                    echo '================================================'
+                }
+                
+                sh """
+                    # Grafana is included in kube-prometheus-stack
+                    # Expose Grafana service
+                    echo '🔧 Configuring Grafana service...'
+                    kubectl patch svc prometheus-grafana -n monitoring -p '{"spec": {"type": "NodePort", "ports": [{"port": 80, "nodePort": 30091, "targetPort": 3000}]}}'
+                    
+                    echo '✅ Grafana configured successfully'
+                    
+                    # Get Grafana credentials
+                    echo ''
+                    echo '🔐 Grafana Login Credentials:'
+                    echo 'Username: admin'
+                    echo -n 'Password: '
+                    kubectl get secret --namespace monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode
+                    echo ''
+                    
+                    # Get service details
+                    echo ''
+                    echo '🌐 Grafana Service:'
+                    kubectl get svc prometheus-grafana -n monitoring
+                """
+            }
+        }
+        
+        stage('Configure Monitoring') {
+            steps {
+                script {
+                    echo '⚙️ Stage 4: Configuring Monitoring...'
+                    echo '================================================'
+                }
+                
+                sh """
+                    echo '📊 Monitoring Stack Status:'
+                    kubectl get all -n monitoring
+                    
+                    echo ''
+                    echo '✅ Monitoring setup completed!'
+                    echo ''
+                    echo '================================================'
+                    echo '📊 ACCESS INFORMATION'
+                    echo '================================================'
+                    echo 'Prometheus: http://<Node-IP>:30090'
+                    echo 'Grafana: http://<Node-IP>:30091'
+                    echo 'Application: http://<Node-IP>:30080'
+                    echo ''
+                    echo 'Grafana Default Credentials:'
+                    echo '  Username: admin'
+                    echo '  Password: (retrieve using kubectl command above)'
+                    echo '================================================'
+                """
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ ================================================'
+            echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
+            echo '✅ ================================================'
+            echo "✅ Build Number: ${BUILD_NUMBER}"
+            echo "✅ Docker Image: ${LATEST_IMAGE_NAME}"
+            echo '✅ Application deployed to Kubernetes'
+            echo '✅ Monitoring stack deployed (Prometheus + Grafana)'
+            echo '✅ ================================================'
+        }
+        
+        failure {
+            echo '❌ ================================================'
+            echo '❌ PIPELINE FAILED!'
+            echo '❌ ================================================'
+            echo "❌ Build Number: ${BUILD_NUMBER}"
+            echo '❌ Check logs above for error details'
+            echo '❌ ================================================'
+        }
+        
+        always {
+            echo '🧹 Cleaning up workspace...'
+            cleanWs()
+        }
+    }
+}
