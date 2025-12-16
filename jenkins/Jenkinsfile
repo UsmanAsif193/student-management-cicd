@@ -9,9 +9,6 @@ pipeline {
         IMAGE_TAG = "${BUILD_NUMBER}"
         FULL_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
         LATEST_IMAGE_NAME = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
-        
-        // Kubernetes Configuration
-        KUBECONFIG = credentials('kubeconfig-credentials')
     }
     
     stages {
